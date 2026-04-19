@@ -1,6 +1,5 @@
 node_modules/
 tmp/*
 !tmp/.keep
-.env
 
 .DS_Store
