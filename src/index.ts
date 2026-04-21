@@ -10,7 +10,7 @@ import { Command } from "commander";
 
 import { api } from "./api";
 import { readConfig, updateConfig, writeConfig } from "./config";
-import { LoginResponse, ProjectsResponse } from "../types";
+import { Log, LoginResponse, Project, ProjectsResponse } from "../types";
 
 const { BASE_URL } = process.env;
 
@@ -71,7 +71,7 @@ program
   .action(async () => {
     let spinner;
     try {
-      spinner = ora("Authenticating...").start();
+      spinner = ora("Logging out...").start();
       await api.post(`/auth/logout`);
       await writeConfig({});
       spinner.succeed(`Successfully logged out.`);
@@ -114,10 +114,16 @@ program.command("projects").action(async () => {
     const { data } = await api.get<ProjectsResponse>("/projects");
     spinner.succeed("Projects:");
 
+    // Creat Table Output
     const tableContent = data.map((d) => [d.name, d.created_at]);
-    var t = new table({ chars: { mid: "", "left-mid": "", "mid-mid": "", "right-mid": "" } });
+    var t = new table({
+      head: ["Name", "Created"],
+      chars: { mid: "", "left-mid": "", "mid-mid": "", "right-mid": "" },
+    });
     t.push(...tableContent);
     console.log(t.toString());
+
+    // console.log('Project info via "logr project <name>"');
   } catch (error: any) {
     if (error.status === 403) {
       spinner?.succeed("Not logged in.");
@@ -129,10 +135,32 @@ program.command("projects").action(async () => {
 
 program
   .command("project")
-  .argument("id", "project id")
-  .action(async (id) => {
-    const r = await api.get(`${BASE_URL}/projects/${id}`);
-    console.log(r.data);
+  .argument("name", "project name")
+  .action(async (name) => {
+    let spinner;
+    try {
+      spinner = ora().start();
+      const config = await readConfig();
+      if (!config?.api_key) spinner?.fail("Please log in via `logr login`");
+
+      const { data } = await api.get<Log[]>(`/projects/${name}`);
+      spinner.stop();
+
+      // Creat Table Output
+      const tableContent = data.map((d) => [d.id, d.channel, d.event, d.created_at]);
+      var t = new table({
+        head: ["ID", "Channel", "Event", "Created at"],
+        chars: { mid: "", "left-mid": "", "mid-mid": "", "right-mid": "" },
+      });
+      t.push(...tableContent);
+      console.log(t.toString());
+    } catch (error: any) {
+      if (error.status === 403) {
+        spinner?.succeed("Not logged in.");
+      } else {
+        spinner?.fail("Error getting project.");
+      }
+    }
   });
 
 program
@@ -149,7 +177,7 @@ program
   .argument("channel", "channel name")
   .argument("event", "event name")
   .action(async (project, channel, event) => {
-    const r = await api.post(`${BASE_URL}/data`, { project, channel, event });
+    const r = await api.post(`/data`, { project, channel, event });
     console.log(r.data);
   });
 
