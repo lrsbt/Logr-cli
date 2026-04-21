@@ -1,5 +1,5 @@
 export interface Config {
-  api_key: string;
+  api_key?: string;
 }
 
 export interface LoginResponse {
@@ -9,3 +9,12 @@ export interface LoginResponse {
     api_key: string;
   };
 }
+
+export interface Project {
+  id: number;
+  user_id: number;
+  name: string;
+  created_at: string;
+}
+
+export type ProjectsResponse = Project[];

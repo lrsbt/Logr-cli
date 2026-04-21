@@ -4,17 +4,22 @@ dotenv.config();
 import axios from "axios";
 import ora from "ora";
 import chalk from "chalk";
+import table from "cli-table3";
 import inquirer from "inquirer";
 import { Command } from "commander";
+
 import { api } from "./api";
 import { readConfig, updateConfig, writeConfig } from "./config";
-import { LoginResponse } from "../types";
+import { LoginResponse, ProjectsResponse } from "../types";
 
 const { BASE_URL } = process.env;
 
 const program = new Command();
 
 program.name("Logr").description("CLI tool for logging and viewing.");
+
+program.option("-f, --foo", "enable some foo");
+program.addHelpText("beforeAll", "Test");
 
 program.command("hi").action(async () => {
   console.log(chalk.cyanBright(`Hi!`));
@@ -32,21 +37,50 @@ program
   .command("login")
   .description("Log into Logr")
   .action(async () => {
-    let spinner = ora("Authing");
+    let spinner;
+
     try {
       const { username, password } = await inquirer.prompt([
         { type: "input", name: "username", message: "Enter your username:" },
         { type: "password", name: "password", message: "Please enter your password:" },
       ]);
-      spinner.start();
-      const { data } = await axios.post<LoginResponse>(`${BASE_URL}/auth/login`, {
+
+      spinner = ora("Authenticating...").start();
+
+      const {
+        data: { user },
+      } = await api.post<LoginResponse>("/auth/login", {
         username,
         password,
       });
-      writeConfig({ api_key: data.user.api_key });
-      spinner.succeed(`Welcome ${data.user.username}!`);
+
+      await writeConfig({ api_key: user.api_key });
+      spinner.succeed(`Welcome ${user.username}! You are now logged in.`);
     } catch (error) {
-      spinner.fail("Error loggin in!");
+      if (axios.isAxiosError(error)) {
+        spinner?.fail(error.response?.data?.message || "Error logging in!");
+      } else {
+        spinner?.fail("Error logging in!");
+      }
+    }
+  });
+
+program
+  .command("logout")
+  .description("Log out of Logr")
+  .action(async () => {
+    let spinner;
+    try {
+      spinner = ora("Authenticating...").start();
+      await api.post(`/auth/logout`);
+      await writeConfig({});
+      spinner.succeed(`Successfully logged out.`);
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        spinner?.fail(error.response?.data?.message || "Error logging out!");
+      } else {
+        spinner?.fail("Error logging out!");
+      }
     }
   });
 
@@ -54,15 +88,43 @@ program
   .command("status")
   .description("Check the current status")
   .action(async () => {
-    // read config
-    // use api_key to get /me
-    // if it returns things, we are good
-    // if it fails then the local config is b0rked
+    let spinner;
+    try {
+      spinner = ora().start();
+      const {
+        data: { user },
+      } = await api.get("/auth/me");
+      spinner.succeed(`You are logged in as ${user.username}.`);
+    } catch (error: any) {
+      if (error.status === 403) {
+        spinner?.succeed("Not logged in.");
+      } else {
+        spinner?.fail("Error getting status!");
+      }
+    }
   });
 
 program.command("projects").action(async () => {
-  const r = await api.get(`${BASE_URL}/projects`);
-  console.log(r.data);
+  let spinner;
+  try {
+    spinner = ora().start();
+    const config = await readConfig();
+    if (!config?.api_key) spinner?.fail("Please log in via `logr login`");
+
+    const { data } = await api.get<ProjectsResponse>("/projects");
+    spinner.succeed("Projects:");
+
+    const tableContent = data.map((d) => [d.name, d.created_at]);
+    var t = new table({ chars: { mid: "", "left-mid": "", "mid-mid": "", "right-mid": "" } });
+    t.push(...tableContent);
+    console.log(t.toString());
+  } catch (error: any) {
+    if (error.status === 403) {
+      spinner?.succeed("Not logged in.");
+    } else {
+      spinner?.fail("Error getting projects.");
+    }
+  }
 });
 
 program
