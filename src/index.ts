@@ -10,11 +10,26 @@ import { Command } from "commander";
 
 import { api } from "./api";
 import { readConfig, updateConfig, writeConfig } from "./config";
-import { Log, LoginResponse, Project, ProjectsResponse } from "../types";
+import {
+  CreateLogResponse,
+  CreateProjectResponse,
+  Log,
+  LoginResponse,
+  ProjectsResponse,
+} from "../types";
 
 const { BASE_URL } = process.env;
 
+const tableStyle = { chars: { mid: "", "left-mid": "", "mid-mid": "", "right-mid": "" } };
+
 const program = new Command();
+
+const ensureLogin = async () => {
+  const config = await readConfig();
+  if (!config?.api_key) {
+    program.error(`Please log in first via "logr login"`);
+  }
+};
 
 program.name("Logr").description("CLI tool for logging and viewing.");
 
@@ -62,6 +77,8 @@ program
       } else {
         spinner?.fail("Error logging in!");
       }
+    } finally {
+      spinner?.stop();
     }
   });
 
@@ -81,6 +98,8 @@ program
       } else {
         spinner?.fail("Error logging out!");
       }
+    } finally {
+      spinner?.stop();
     }
   });
 
@@ -93,7 +112,7 @@ program
       spinner = ora().start();
       const {
         data: { user },
-      } = await api.get("/auth/me");
+      } = await api.get<LoginResponse>("/auth/me");
       spinner.succeed(`You are logged in as ${user.username}.`);
     } catch (error: any) {
       if (error.status === 403) {
@@ -101,41 +120,42 @@ program
       } else {
         spinner?.fail("Error getting status!");
       }
+    } finally {
+      spinner?.stop();
     }
   });
 
-program.command("projects").action(async () => {
-  let spinner;
-  try {
-    spinner = ora().start();
-    const config = await readConfig();
-    if (!config?.api_key) spinner?.fail("Please log in via `logr login`");
+program
+  .command("projects")
+  .hook("preAction", async () => await ensureLogin())
+  .action(async () => {
+    let spinner;
+    try {
+      spinner = ora().start();
+      const config = await readConfig();
+      if (!config?.api_key) spinner?.fail("Please log in via `logr login`");
 
-    const { data } = await api.get<ProjectsResponse>("/projects");
-    spinner.succeed("Projects:");
+      const { data } = await api.get<ProjectsResponse>("/projects");
+      spinner.succeed("Projects:");
 
-    // Creat Table Output
-    const tableContent = data.map((d) => [d.name, d.created_at]);
-    var t = new table({
-      head: ["Name", "Created"],
-      chars: { mid: "", "left-mid": "", "mid-mid": "", "right-mid": "" },
-    });
-    t.push(...tableContent);
-    console.log(t.toString());
+      // Create Table Output
+      const tableContent = data.map((d) => [d.name, d.created_at]);
+      var t = new table({ head: ["Name", "Created"], ...tableStyle });
+      t.push(...tableContent);
+      console.log(t.toString());
 
-    // console.log('Project info via "logr project <name>"');
-  } catch (error: any) {
-    if (error.status === 403) {
-      spinner?.succeed("Not logged in.");
-    } else {
+      console.log('Project info via "logr project <name>"');
+    } catch (error: any) {
       spinner?.fail("Error getting projects.");
+    } finally {
+      spinner?.stop();
     }
-  }
-});
+  });
 
 program
   .command("project")
   .argument("name", "project name")
+  .hook("preAction", async () => await ensureLogin())
   .action(async (name) => {
     let spinner;
     try {
@@ -146,29 +166,39 @@ program
       const { data } = await api.get<Log[]>(`/projects/${name}`);
       spinner.stop();
 
-      // Creat Table Output
-      const tableContent = data.map((d) => [d.id, d.channel, d.event, d.created_at]);
-      var t = new table({
-        head: ["ID", "Channel", "Event", "Created at"],
-        chars: { mid: "", "left-mid": "", "mid-mid": "", "right-mid": "" },
-      });
+      // Create Table Output
+      const tableContent = data.map((d, i) => [i + 1, d.channel, d.event, d.created_at]);
+      var t = new table({ head: ["", "Channel", "Event", "Created at"], ...tableStyle });
       t.push(...tableContent);
       console.log(t.toString());
+
+      // TODO: Also show project attached
     } catch (error: any) {
       if (error.status === 403) {
-        spinner?.succeed("Not logged in.");
+        spinner?.fail(`Project "${name}" doesn't exist.`);
       } else {
         spinner?.fail("Error getting project.");
       }
+    } finally {
+      spinner?.stop();
     }
   });
 
 program
   .command("project-create")
   .argument("name", "project name")
+  .hook("preAction", async () => await ensureLogin())
   .action(async (name) => {
-    const r = await api.post(`${BASE_URL}/projects`, { name });
-    console.log(r.data);
+    let spinner;
+    try {
+      spinner = ora().start();
+      const { data } = await api.post<CreateProjectResponse>(`/projects`, { name });
+      spinner.succeed(`Created project ${data.project.name}`);
+    } catch (error: any) {
+      spinner?.fail(error.response.data.error);
+    } finally {
+      spinner?.stop();
+    }
   });
 
 program
@@ -177,7 +207,7 @@ program
   .argument("channel", "channel name")
   .argument("event", "event name")
   .action(async (project, channel, event) => {
-    const r = await api.post(`/data`, { project, channel, event });
+    const r = await api.post<CreateLogResponse>(`/data`, { project, channel, event });
     console.log(r.data);
   });
 

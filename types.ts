@@ -2,14 +2,6 @@ export interface Config {
   api_key?: string;
 }
 
-export interface LoginResponse {
-  user: {
-    id: number;
-    username: string;
-    api_key: string;
-  };
-}
-
 export interface Project {
   id: number;
   user_id: number;
@@ -25,4 +17,27 @@ export interface Log {
   created_at: string;
 }
 
+/* Axios Response Types */
+
 export type ProjectsResponse = Project[];
+
+export interface LoginResponse {
+  user: {
+    id: number;
+    username: string;
+    api_key: string;
+  };
+}
+
+export interface CreateProjectResponse {
+  success: boolean;
+  project: {
+    id: number;
+    name: string;
+  };
+}
+
+export interface CreateLogResponse {
+  ok: boolean;
+  id: number;
+}
